@@ -1,0 +1,1058 @@
+local lib = {}
+lib.__index = lib
+
+local WindowMT = {}
+WindowMT.__index = WindowMT
+
+local SectionMT = {}
+SectionMT.__index = SectionMT
+
+local TabMT = {}
+TabMT.__index = TabMT
+
+--// Services
+local Players=game:GetService("Players")
+local TweenService=game:GetService("TweenService")
+local UserInputService=game:GetService("UserInputService")
+
+local player=Players.LocalPlayer
+local playerGui=player:WaitForChild("PlayerGui")
+
+--// Style
+local colors={
+	Bg=Color3.new(0.0784314,0.0784314,0.0784314),
+	Section=Color3.new(0.0980392,0.0980392,0.0980392),
+	Stroke=Color3.new(0.156863,0.156863,0.156863),
+	Text=Color3.new(0.960784,0.960784,0.960784),
+	SubText=Color3.new(0.392157,0.392157,0.392157),
+	ToggleOff=Color3.new(0.215686,0.215686,0.215686),
+	NavIdle=Color3.new(0.294118,0.294118,0.294118)
+}
+
+local font=Font.new("rbxassetid://12187365364",Enum.FontWeight.Medium,Enum.FontStyle.Normal)
+local interFont=Font.new("rbxasset://fonts/families/Inter.json",Enum.FontWeight.Medium,Enum.FontStyle.Normal)
+
+local bezier=TweenInfo.new(0.35,Enum.EasingStyle.Quint,Enum.EasingDirection.Out)
+local bezierFast=TweenInfo.new(0.2,Enum.EasingStyle.Quint,Enum.EasingDirection.Out)
+local bezierHalf=TweenInfo.new(bezier.Time/2,Enum.EasingStyle.Quint,Enum.EasingDirection.Out)
+
+local errorBoxes=setmetatable({},{__mode="k"})
+
+--// Drag
+local function Drag(frame,handle)
+	local dragging=false
+	local dragInput,mousePos,framePos
+	local dragTween
+
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+			dragging=true
+			mousePos=input.Position
+			framePos=frame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState==Enum.UserInputState.End then
+					dragging=false
+				end
+			end)
+		end
+	end)
+
+	handle.InputChanged:Connect(function(input)
+		if input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch then
+			dragInput=input
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input==dragInput and dragging then
+			local delta=input.Position-mousePos
+			local goal=UDim2.new(framePos.X.Scale,framePos.X.Offset+delta.X,framePos.Y.Scale,framePos.Y.Offset+delta.Y)
+			if dragTween then dragTween:Cancel() end
+			dragTween=TweenService:Create(frame,bezierFast,{Position=goal})
+			dragTween:Play()
+		end
+	end)
+end
+
+--// Open / Close window animations
+local function OpenWindow(frame,targetBgTransparency)
+	frame.GroupTransparency=1
+	frame.GroupColor3=Color3.fromRGB(0,0,0)
+	frame.BackgroundTransparency=1
+
+	local firstTween=TweenService:Create(frame,bezierHalf,{GroupTransparency=0.5,BackgroundTransparency=targetBgTransparency})
+	firstTween:Play()
+	firstTween.Completed:Connect(function()
+		TweenService:Create(frame,bezierHalf,{GroupTransparency=0,GroupColor3=Color3.fromRGB(255,255,255)}):Play()
+	end)
+end
+
+local function CloseWindow(frame)
+	local firstTween=TweenService:Create(frame,bezierHalf,{GroupTransparency=0.5,GroupColor3=Color3.fromRGB(0,0,0)})
+	firstTween:Play()
+	firstTween.Completed:Connect(function()
+		local secondTween=TweenService:Create(frame,bezierHalf,{GroupTransparency=1,BackgroundTransparency=1})
+		secondTween:Play()
+		secondTween.Completed:Connect(function()
+			local screenGui=frame:FindFirstAncestorWhichIsA("ScreenGui")
+			if screenGui then
+				screenGui:Destroy()
+			end
+		end)
+	end)
+end
+
+--// Error handler
+local function ShowError(windowFrame,message)
+	local existing=errorBoxes[windowFrame]
+
+	if existing and existing.Overlay.Parent then
+		existing.TextBox.Text=existing.TextBox.Text.."\n"..message
+		return existing.Overlay
+	end
+
+	local overlay=Instance.new("Frame")
+	overlay.Name="ErrorOverlay"
+	overlay.Size=UDim2.new(1,0,1,0)
+	overlay.BackgroundColor3=Color3.new(0,0,0)
+	overlay.BackgroundTransparency=1
+	overlay.BorderSizePixel=0
+	overlay.ZIndex=50
+	overlay.Parent=windowFrame
+
+	local overlayCorner=Instance.new("UICorner")
+	overlayCorner.CornerRadius=UDim.new(0,7)
+	overlayCorner.Parent=overlay
+
+	local box=Instance.new("Frame")
+	box.Name="Frame"
+	box.AnchorPoint=Vector2.new(0.5,0.5)
+	box.Position=UDim2.new(0.5,0,0.5,0)
+	box.Size=UDim2.new(0,249,0,0)
+	box.BackgroundColor3=Color3.new(0.0980392,0.0980392,0.0980392)
+	box.BorderSizePixel=0
+	box.ClipsDescendants=true
+	box.ZIndex=51
+	box.Parent=overlay
+
+	local boxCorner=Instance.new("UICorner")
+	boxCorner.CornerRadius=UDim.new(0,7)
+	boxCorner.Parent=box
+
+	local title=Instance.new("TextLabel")
+	title.Name="Title"
+	title.Position=UDim2.new(0.0452817,0,0.0841811,0)
+	title.Size=UDim2.new(0.109523,0,0.044289,0)
+	title.BackgroundTransparency=1
+	title.Text="Error"
+	title.TextColor3=colors.Text
+	title.TextSize=16
+	title.FontFace=font
+	title.TextXAlignment=Enum.TextXAlignment.Left
+	title.ZIndex=52
+	title.Parent=box
+
+	local textBox=Instance.new("TextBox")
+	textBox.Name="TextBox"
+	textBox.Position=UDim2.new(0.0441767,0,0.195122,0)
+	textBox.Size=UDim2.new(0,228,0,92)
+	textBox.BackgroundColor3=Color3.new(0.117647,0.117647,0.117647)
+	textBox.BorderSizePixel=0
+	textBox.Text=message
+	textBox.TextColor3=colors.Text
+	textBox.TextSize=14
+	textBox.FontFace=Font.new("rbxassetid://12187365364",Enum.FontWeight.Regular,Enum.FontStyle.Normal)
+	textBox.TextWrapped=true
+	textBox.TextEditable=false
+	textBox.ClearTextOnFocus=false
+	textBox.MultiLine=true
+	textBox.TextXAlignment=Enum.TextXAlignment.Left
+	textBox.TextYAlignment=Enum.TextYAlignment.Top
+	textBox.ZIndex=52
+	textBox.Parent=box
+
+	local textBoxCorner=Instance.new("UICorner")
+	textBoxCorner.CornerRadius=UDim.new(0,7)
+	textBoxCorner.Parent=textBox
+
+	local padding=Instance.new("UIPadding")
+	padding.PaddingTop=UDim.new(0,5)
+	padding.PaddingLeft=UDim.new(0,5)
+	padding.Parent=textBox
+
+	local ignoreBtn=Instance.new("TextButton")
+	ignoreBtn.Name="Frame"
+	ignoreBtn.Position=UDim2.new(0.0441767,0,0.804878,0)
+	ignoreBtn.Size=UDim2.new(0,59,0,25)
+	ignoreBtn.BackgroundColor3=Color3.new(0.196078,0.196078,0.196078)
+	ignoreBtn.BorderSizePixel=0
+	ignoreBtn.Text=""
+	ignoreBtn.AutoButtonColor=false
+	ignoreBtn.ZIndex=52
+	ignoreBtn.Parent=box
+
+	local ignoreCorner=Instance.new("UICorner")
+	ignoreCorner.CornerRadius=UDim.new(0,7)
+	ignoreCorner.Parent=ignoreBtn
+
+	local ignoreLabel=Instance.new("TextLabel")
+	ignoreLabel.Size=UDim2.new(1,0,1,0)
+	ignoreLabel.BackgroundTransparency=1
+	ignoreLabel.Text="Ignore"
+	ignoreLabel.TextColor3=colors.Text
+	ignoreLabel.TextSize=14
+	ignoreLabel.FontFace=font
+	ignoreLabel.ZIndex=53
+	ignoreLabel.Parent=ignoreBtn
+
+	local closeBtn=Instance.new("TextButton")
+	closeBtn.Name="Frame"
+	closeBtn.Position=UDim2.new(0.305221,0,0.804878,0)
+	closeBtn.Size=UDim2.new(0,163,0,25)
+	closeBtn.BackgroundColor3=Color3.new(0.196078,0.196078,0.196078)
+	closeBtn.BorderSizePixel=0
+	closeBtn.Text=""
+	closeBtn.AutoButtonColor=false
+	closeBtn.ZIndex=52
+	closeBtn.Parent=box
+
+	local closeCorner=Instance.new("UICorner")
+	closeCorner.CornerRadius=UDim.new(0,7)
+	closeCorner.Parent=closeBtn
+
+	local closeLabel=Instance.new("TextLabel")
+	closeLabel.Size=UDim2.new(1,0,1,0)
+	closeLabel.BackgroundTransparency=1
+	closeLabel.Text="Close Window"
+	closeLabel.TextColor3=colors.Text
+	closeLabel.TextSize=14
+	closeLabel.FontFace=font
+	closeLabel.ZIndex=53
+	closeLabel.Parent=closeBtn
+
+	ignoreBtn.MouseButton1Click:Connect(function()
+		errorBoxes[windowFrame]=nil
+		TweenService:Create(overlay,bezierFast,{BackgroundTransparency=1}):Play()
+		TweenService:Create(box,bezierFast,{Size=UDim2.new(0,249,0,0)}):Play()
+		task.delay(bezierFast.Time,function()
+			overlay:Destroy()
+		end)
+	end)
+
+	closeBtn.MouseButton1Click:Connect(function()
+		CloseWindow(windowFrame)
+	end)
+
+	errorBoxes[windowFrame]={Overlay=overlay,TextBox=textBox}
+
+	TweenService:Create(overlay,bezierFast,{BackgroundTransparency=0.5}):Play()
+	TweenService:Create(box,bezier,{Size=UDim2.new(0,249,0,164)}):Play()
+
+	return overlay
+end
+
+local function RaiseError(windowFrame,reason)
+	local line=debug.info(3,"l") or debug.info(2,"l") or 0
+	local msg="Line "..tostring(line)..": "..reason
+	ShowError(windowFrame,msg)
+	warn(msg.."  -  Client - Module:"..tostring(line))
+end
+
+--// Bottom navbar (with fade page transitions)
+local function BuildNavBar(window,frame)
+	local nav=Instance.new("Frame")
+	nav.Name="Frame"
+	nav.Position=UDim2.new(0,0,0.933025,0)
+	nav.Size=UDim2.new(1,-1,0,30)
+	nav.BackgroundColor3=colors.Stroke
+	nav.BorderSizePixel=0
+	nav.Parent=frame
+
+	local icons={}
+
+	local function makeIcon(name,image,xScale)
+		local icon=Instance.new("ImageButton")
+		icon.Name=name
+		icon.Position=UDim2.new(xScale,0,0.146666,0)
+		icon.Size=UDim2.new(0,20,0,20)
+		icon.BackgroundTransparency=1
+		icon.BorderSizePixel=0
+		icon.Image=image
+		icon.ImageColor3=colors.NavIdle
+		icon.Parent=nav
+		icons[name]=icon
+		return icon
+	end
+
+	local homeIcon=makeIcon("home","rbxassetid://117906088481880",0.871838)
+	local featuresIcon=makeIcon("features","rbxassetid://136217097965233",0.913997)
+	local settingsIcon=makeIcon("settings","rbxassetid://135898386481523",0.954469)
+
+	local pages={}
+	local switching=false
+
+	local function switchTo(pageName)
+		if switching then return end
+		if window.ActivePage==pageName then return end
+		switching=true
+
+		local current=pages[window.ActivePage]
+		local target=pages[pageName]
+
+		for name,icon in pairs(icons) do
+			TweenService:Create(icon,bezierFast,{ImageColor3=(name==pageName) and colors.Text or colors.NavIdle}):Play()
+		end
+
+		window.Frame.Title.Visible=(pageName=="features")
+
+		if current then
+			local fadeOut=TweenService:Create(current,bezierFast,{GroupTransparency=1})
+			fadeOut:Play()
+			fadeOut.Completed:Connect(function()
+				current.Visible=false
+				target.Visible=true
+				target.GroupTransparency=1
+				local fadeIn=TweenService:Create(target,bezierFast,{GroupTransparency=0})
+				fadeIn:Play()
+				fadeIn.Completed:Connect(function()
+					switching=false
+				end)
+			end)
+		else
+			target.Visible=true
+			target.GroupTransparency=1
+			local fadeIn=TweenService:Create(target,bezierFast,{GroupTransparency=0})
+			fadeIn:Play()
+			fadeIn.Completed:Connect(function()
+				switching=false
+			end)
+		end
+
+		window.ActivePage=pageName
+	end
+
+	homeIcon.MouseButton1Click:Connect(function() switchTo("home") end)
+	featuresIcon.MouseButton1Click:Connect(function() switchTo("features") end)
+	settingsIcon.MouseButton1Click:Connect(function() switchTo("settings") end)
+
+	window.NavBar=nav
+	window.NavIcons=icons
+	window.NavPages=pages
+	window.SwitchPage=switchTo
+
+	return pages
+end
+
+--// Window
+function lib:New(config)
+	config=config or {}
+	local title=config.Name or config.Title or "Window Title"
+	local transparent=config.Transparency
+	if transparent==nil then
+		transparent=false
+	end
+
+	local gui=Instance.new("ScreenGui")
+	gui.Name=title
+	gui.IgnoreGuiInset=true
+	gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
+	gui.Parent=playerGui
+
+	local frame=Instance.new("CanvasGroup")
+	frame.Name="CanvasGroup"
+	frame.AnchorPoint=Vector2.new(0.5,0.5)
+	frame.Position=UDim2.new(0.5,0,0.5,0)
+	frame.Size=UDim2.new(0,594,0,433)
+	frame.BackgroundColor3=colors.Bg
+	frame.BorderSizePixel=0
+	frame.Parent=gui
+
+	local corner=Instance.new("UICorner")
+	corner.CornerRadius=UDim.new(0,7)
+	corner.Parent=frame
+
+	local shadow=Instance.new("UIShadow")
+	shadow.Parent=frame
+
+	local titleBar=Instance.new("TextLabel")
+	titleBar.Name="Title"
+	titleBar.Position=UDim2.new(0.0154857,0,0.0286552,0)
+	titleBar.Size=UDim2.new(0.109523,0,0.044289,0)
+	titleBar.BackgroundTransparency=1
+	titleBar.Text=title
+	titleBar.TextColor3=colors.Text
+	titleBar.TextSize=16
+	titleBar.FontFace=font
+	titleBar.TextXAlignment=Enum.TextXAlignment.Left
+	titleBar.Parent=frame
+
+	local dragHandle=Instance.new("Frame")
+	dragHandle.Name="DragHandle"
+	dragHandle.Size=UDim2.new(1,0,0,40)
+	dragHandle.BackgroundTransparency=1
+	dragHandle.BorderSizePixel=0
+	dragHandle.Parent=frame
+
+	Drag(frame,dragHandle)
+
+	--// Features page (default content: divider + sections + tabs)
+	local featuresPage=Instance.new("CanvasGroup")
+	featuresPage.Name="FeaturesPage"
+	featuresPage.Size=UDim2.new(1,0,1,0)
+	featuresPage.BackgroundTransparency=1
+	featuresPage.BorderSizePixel=0
+	featuresPage.Parent=frame
+
+	local divider=Instance.new("Frame")
+	divider.Name="Frame"
+	divider.Position=UDim2.new(0.176768,0,0.00229885,0)
+	divider.Size=UDim2.new(0,1,0,434)
+	divider.BackgroundColor3=colors.Stroke
+	divider.BorderSizePixel=0
+	divider.Parent=featuresPage
+
+	local sectionHolder=Instance.new("Frame")
+	sectionHolder.Name="SectionHolder"
+	sectionHolder.Position=UDim2.new(0.015899,0,0.0757637,0)
+	sectionHolder.Size=UDim2.new(0.16,0,0.85,0)
+	sectionHolder.BackgroundTransparency=1
+	sectionHolder.BorderSizePixel=0
+	sectionHolder.Parent=featuresPage
+
+	local sectionList=Instance.new("UIListLayout")
+	sectionList.Padding=UDim.new(0,18)
+	sectionList.SortOrder=Enum.SortOrder.LayoutOrder
+	sectionList.Parent=sectionHolder
+
+	--// Tab name header, shown above the page content (e.g. "Aimbot")
+	local tabTitle=Instance.new("TextLabel")
+	tabTitle.Name="TabTitle"
+	tabTitle.Position=UDim2.new(0.193937,0,0.0286552,0)
+	tabTitle.Size=UDim2.new(0.109523,0,0.044289,0)
+	tabTitle.BackgroundTransparency=1
+	tabTitle.Text=""
+	tabTitle.TextColor3=colors.Text
+	tabTitle.TextSize=16
+	tabTitle.FontFace=font
+	tabTitle.TextXAlignment=Enum.TextXAlignment.Left
+	tabTitle.Parent=featuresPage
+
+	local pageHolder=Instance.new("Frame")
+	pageHolder.Name="PageHolder"
+	pageHolder.Position=UDim2.new(0.188784,0,0.0874961,0)
+	pageHolder.Size=UDim2.new(0,473,0,337)
+	pageHolder.BackgroundTransparency=1
+	pageHolder.BorderSizePixel=0
+	pageHolder.Parent=featuresPage
+
+	--// Home page
+	local homePage=Instance.new("CanvasGroup")
+	homePage.Name="HomePage"
+	homePage.Size=UDim2.new(1,0,1,0)
+	homePage.BackgroundTransparency=1
+	homePage.BorderSizePixel=0
+	homePage.Visible=false
+	homePage.Parent=frame
+
+	local avatar=Instance.new("CanvasGroup")
+	avatar.Name="Avatar"
+	avatar.Position=UDim2.new(0.0152027,0,0.0321782,0)
+	avatar.Size=UDim2.new(0,50,0,50)
+	avatar.BackgroundColor3=Color3.new(0.137255,0.137255,0.137255)
+	avatar.BorderSizePixel=0
+	avatar.Parent=homePage
+
+	local avatarCorner=Instance.new("UICorner")
+	avatarCorner.CornerRadius=UDim.new(1,0)
+	avatarCorner.Parent=avatar
+
+	local avatarImage=Instance.new("ImageLabel")
+	avatarImage.Position=UDim2.new(0.09,0,0.27,0)
+	avatarImage.Size=UDim2.new(0.8,0,0.8,0)
+	avatarImage.BackgroundTransparency=1
+	avatarImage.Image="rbxthumb://type=AvatarHeadShot&id="..player.UserId.."&w=150&h=150"
+	avatarImage.Parent=avatar
+
+	local greeting=Instance.new("TextLabel")
+	greeting.Name="TextLabel"
+	greeting.Position=UDim2.new(0.111486,0,0.0321782,0)
+	greeting.Size=UDim2.new(0,300,0,50)
+	greeting.BackgroundTransparency=1
+	greeting.Text="Good Morning, "..player.Name
+	greeting.TextColor3=colors.Text
+	greeting.TextSize=20
+	greeting.FontFace=font
+	greeting.TextXAlignment=Enum.TextXAlignment.Left
+	greeting.Parent=homePage
+
+	local function statCard(xScale,label,value)
+		local card=Instance.new("Frame")
+		card.Position=UDim2.new(xScale,0,0.185644,0)
+		card.Size=UDim2.new(0,185,0,82)
+		card.BackgroundColor3=Color3.new(0.117647,0.117647,0.117647)
+		card.BorderSizePixel=0
+		card.Parent=homePage
+
+		local cardCorner=Instance.new("UICorner")
+		cardCorner.CornerRadius=UDim.new(0,7)
+		cardCorner.Parent=card
+
+		local labelText=Instance.new("TextLabel")
+		labelText.Position=UDim2.new(0.0635824,0,0.129739,0)
+		labelText.Size=UDim2.new(0,155,0,13)
+		labelText.BackgroundTransparency=1
+		labelText.Text=label
+		labelText.TextColor3=colors.SubText
+		labelText.TextSize=14
+		labelText.FontFace=font
+		labelText.TextXAlignment=Enum.TextXAlignment.Left
+		labelText.Parent=card
+
+		local valueText=Instance.new("TextLabel")
+		valueText.Position=UDim2.new(0.0635824,0,0.398032,0)
+		valueText.Size=UDim2.new(0,155,0,13)
+		valueText.BackgroundTransparency=1
+		valueText.Text=value
+		valueText.TextColor3=colors.Text
+		valueText.TextSize=24
+		valueText.FontFace=font
+		valueText.TextXAlignment=Enum.TextXAlignment.Left
+		valueText.Parent=card
+
+		return valueText
+	end
+
+	statCard(0.0219595,"Executor","Luna")
+	local runtimeValue=statCard(0.350859,"Script Runtime","0:00:00")
+	statCard(0.676,"Status","Undetected")
+
+	local startTime=os.clock()
+	task.spawn(function()
+		while homePage.Parent do
+			local elapsed=os.clock()-startTime
+			local h=math.floor(elapsed/3600)
+			local m=math.floor((elapsed%3600)/60)
+			local s=math.floor(elapsed%60)
+			runtimeValue.Text=string.format("%d:%02d:%02d",h,m,s)
+			task.wait(1)
+		end
+	end)
+
+	--// Settings page
+	local settingsPage=Instance.new("CanvasGroup")
+	settingsPage.Name="SettingsPage"
+	settingsPage.Size=UDim2.new(1,0,1,0)
+	settingsPage.BackgroundTransparency=1
+	settingsPage.BorderSizePixel=0
+	settingsPage.Visible=false
+	settingsPage.Parent=frame
+
+	local comingSoon=Instance.new("TextLabel")
+	comingSoon.Name="TextLabel"
+	comingSoon.AnchorPoint=Vector2.new(0.5,0.5)
+	comingSoon.Position=UDim2.new(0.5,0,0.5,0)
+	comingSoon.Size=UDim2.new(0,300,0,30)
+	comingSoon.BackgroundTransparency=1
+	comingSoon.Text="Coming soon.."
+	comingSoon.TextColor3=colors.SubText
+	comingSoon.TextSize=18
+	comingSoon.FontFace=interFont
+	comingSoon.Parent=settingsPage
+
+	local window=setmetatable({
+		Frame=frame,
+		SectionHolder=sectionHolder,
+		PageHolder=pageHolder,
+		TabTitle=tabTitle,
+		HomePage=homePage,
+		SettingsPage=settingsPage,
+		FeaturesPage=featuresPage,
+		Tabs={}
+	},WindowMT)
+
+	local pages=BuildNavBar(window,frame)
+	pages.home=homePage
+	pages.features=featuresPage
+	pages.settings=settingsPage
+
+	featuresPage.Visible=true
+	window.ActivePage="features"
+	window.NavIcons.features.ImageColor3=colors.Text
+	window.Frame.Title.Visible=true
+
+	OpenWindow(frame,transparent and 0.2 or 0)
+
+	return window
+end
+
+function WindowMT:Close()
+	CloseWindow(self.Frame)
+end
+
+function WindowMT:Tab()
+	RaiseError(self.Frame,"Tab can only be in Section")
+end
+
+function WindowMT:Section(name)
+	local holder=Instance.new("Frame")
+	holder.Name=name.."SectionHolder"
+	holder.AutomaticSize=Enum.AutomaticSize.Y
+	holder.Size=UDim2.new(1,0,0,0)
+	holder.BackgroundTransparency=1
+	holder.BorderSizePixel=0
+	holder.ClipsDescendants=true
+	holder.Parent=self.SectionHolder
+
+	local label=Instance.new("TextLabel")
+	label.Name="Section Label"
+	label.Size=UDim2.new(0,0,0,19)
+	label.AutomaticSize=Enum.AutomaticSize.X
+	label.BackgroundTransparency=1
+	label.Text=name
+	label.TextColor3=colors.SubText
+	label.TextSize=13
+	label.FontFace=font
+	label.TextXAlignment=Enum.TextXAlignment.Left
+	label.Parent=holder
+
+	local minimize=Instance.new("ImageButton")
+	minimize.Name="Section Minimize"
+	minimize.Position=UDim2.new(0,0,0,3)
+	minimize.Size=UDim2.new(0,12,0,12)
+	minimize.BackgroundTransparency=1
+	minimize.BorderSizePixel=0
+	minimize.Image="rbxassetid://11421095840"
+	minimize.ImageColor3=colors.SubText
+	minimize.Parent=holder
+
+	label:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		minimize.Position=UDim2.new(0,label.AbsoluteSize.X+6,0,3)
+	end)
+
+	local tabList=Instance.new("CanvasGroup")
+	tabList.Name="TabList"
+	tabList.Position=UDim2.new(0,0,0,22)
+	tabList.AutomaticSize=Enum.AutomaticSize.Y
+	tabList.Size=UDim2.new(1,0,0,0)
+	tabList.BackgroundTransparency=1
+	tabList.BorderSizePixel=0
+	tabList.Parent=holder
+
+	local layout=Instance.new("UIListLayout")
+	layout.Padding=UDim.new(0,4)
+	layout.SortOrder=Enum.SortOrder.LayoutOrder
+	layout.Parent=tabList
+
+	local section=setmetatable({
+		Holder=holder,
+		Label=label,
+		TabList=tabList,
+		Window=self,
+		Collapsed=false
+	},SectionMT)
+
+	minimize.MouseButton1Click:Connect(function()
+		section.Collapsed=not section.Collapsed
+		if section.Collapsed then
+			TweenService:Create(tabList,bezier,{GroupTransparency=1,Position=UDim2.new(0,0,0,10)}):Play()
+			TweenService:Create(minimize,bezier,{Rotation=180}):Play()
+			task.delay(bezier.Time,function()
+				tabList.Visible=false
+			end)
+		else
+			tabList.Visible=true
+			tabList.GroupTransparency=1
+			tabList.Position=UDim2.new(0,0,0,10)
+			TweenService:Create(tabList,bezier,{GroupTransparency=0,Position=UDim2.new(0,0,0,22)}):Play()
+			TweenService:Create(minimize,bezier,{Rotation=0}):Play()
+		end
+	end)
+
+	return section
+end
+
+function SectionMT:Section()
+	RaiseError(self.Window.Frame,"Section can only be in Window")
+end
+
+function SectionMT:Tab(name)
+	local window=self.Window
+
+	local tabHolder=Instance.new("Frame")
+	tabHolder.Name=name.."TabHolder"
+	tabHolder.Size=UDim2.new(1,0,0,22)
+	tabHolder.BackgroundTransparency=1
+	tabHolder.BorderSizePixel=0
+	tabHolder.Parent=self.TabList
+
+	local underline=Instance.new("Frame")
+	underline.Name="Frame"
+	underline.Position=UDim2.new(0,0,1,-3)
+	underline.Size=UDim2.new(0,0,0,2)
+	underline.BackgroundColor3=colors.Text
+	underline.BorderSizePixel=0
+	underline.Parent=tabHolder
+
+	local underlineCorner=Instance.new("UICorner")
+	underlineCorner.CornerRadius=UDim.new(1,0)
+	underlineCorner.Parent=underline
+
+	local underlineShadow=Instance.new("UIShadow")
+	underlineShadow.Parent=underline
+
+	local btn=Instance.new("TextButton")
+	btn.Name=name
+	btn.Size=UDim2.new(1,0,0,16)
+	btn.BackgroundTransparency=1
+	btn.BorderSizePixel=0
+	btn.Text=name
+	btn.TextColor3=colors.SubText
+	btn.TextSize=14
+	btn.FontFace=font
+	btn.TextXAlignment=Enum.TextXAlignment.Left
+	btn.AutoButtonColor=false
+	btn.Parent=tabHolder
+
+	local page=Instance.new("Frame")
+	page.Name=name.."Page"
+	page.Size=UDim2.new(1,0,1,0)
+	page.BackgroundTransparency=1
+	page.BorderSizePixel=0
+	page.Visible=#window.Tabs==0
+	page.Parent=window.PageHolder
+
+	local pageLayout=Instance.new("UIListLayout")
+	pageLayout.Padding=UDim.new(0,6)
+	pageLayout.SortOrder=Enum.SortOrder.LayoutOrder
+	pageLayout.Parent=page
+
+	local tab=setmetatable({
+		TabButton=btn,
+		Page=page,
+		Underline=underline,
+		Window=window,
+		Name=name
+	},TabMT)
+
+	local function select()
+		for _,t in pairs(window.Tabs) do
+			if t~=tab then
+				t.Page.Visible=false
+				TweenService:Create(t.TabButton,bezierFast,{TextColor3=colors.SubText}):Play()
+				TweenService:Create(t.Underline,bezierFast,{Size=UDim2.new(0,0,0,2)}):Play()
+			end
+		end
+		page.Visible=true
+		local textWidth=btn.TextBounds.X*0.45
+		TweenService:Create(btn,bezierFast,{TextColor3=colors.Text}):Play()
+		TweenService:Create(underline,bezier,{Size=UDim2.new(0,textWidth,0,2)}):Play()
+
+		--// Update the tab-name header above the page content
+		if window.TabTitle then
+			window.TabTitle.Text=name
+		end
+	end
+
+	btn.MouseButton1Click:Connect(select)
+
+	table.insert(window.Tabs,tab)
+
+	if #window.Tabs==1 then
+		select()
+	end
+
+	return tab
+end
+
+function TabMT:Toggle(config)
+	config=config or {}
+	local name=config.Name or "Toggle"
+	local default=config.Default or false
+	local callback=config.Callback or function() end
+
+	local holder=Instance.new("Frame")
+	holder.Name="Frame"
+	holder.Size=UDim2.new(1,0,0,46)
+	holder.BackgroundColor3=colors.Section
+	holder.BorderSizePixel=0
+	holder.Parent=self.Page
+
+	local holderCorner=Instance.new("UICorner")
+	holderCorner.CornerRadius=UDim.new(0,7)
+	holderCorner.Parent=holder
+
+	local stroke=Instance.new("UIStroke")
+	stroke.Color=colors.Stroke
+	stroke.Parent=holder
+
+	local label=Instance.new("TextLabel")
+	label.Position=UDim2.new(0.0255865,0,0.441951,0)
+	label.Size=UDim2.new(0.6,0,0.112167,0)
+	label.BackgroundTransparency=1
+	label.Text=name
+	label.TextColor3=colors.Text
+	label.TextSize=15
+	label.FontFace=font
+	label.TextXAlignment=Enum.TextXAlignment.Left
+	label.Parent=holder
+
+	local switch=Instance.new("Frame")
+	switch.Name="Frame"
+	switch.Position=UDim2.new(0.931818,0,0.292995,0)
+	switch.Size=UDim2.new(0,18,0,18)
+	switch.BackgroundColor3=default and colors.Text or colors.ToggleOff
+	switch.BorderSizePixel=0
+	switch.Parent=holder
+
+	local switchCorner=Instance.new("UICorner")
+	switchCorner.CornerRadius=UDim.new(0.3,0)
+	switchCorner.Parent=switch
+
+	local switchShadow=Instance.new("UIShadow")
+	switchShadow.Color=Color3.fromRGB(245,245,245)
+	switchShadow.Parent=switch
+	switchShadow.Enabled=default
+
+	local button=Instance.new("TextButton")
+	button.Name="Frame"
+	button.Size=UDim2.new(1,0,1,0)
+	button.BackgroundTransparency=1
+	button.Text=""
+	button.Parent=holder
+
+	local toggle={State=default,Holder=holder,Switch=switch}
+
+	local function set(state,fire)
+		toggle.State=state
+		TweenService:Create(switch,bezierFast,{BackgroundColor3=state and colors.Text or colors.ToggleOff}):Play()
+		switchShadow.Enabled=state
+		if fire then
+			callback(state)
+		end
+	end
+
+	button.MouseButton1Click:Connect(function()
+		set(not toggle.State,true)
+	end)
+
+	function toggle:Set(state)
+		set(state,true)
+	end
+
+	return toggle
+end
+
+--// Button
+function TabMT:Button(config)
+	config=config or {}
+	local name=config.Name or "Button"
+	local callback=config.Callback or function() end
+
+	local holder=Instance.new("Frame")
+	holder.Name="Frame"
+	holder.Size=UDim2.new(1,0,0,46)
+	holder.BackgroundColor3=colors.Section
+	holder.BorderSizePixel=0
+	holder.Parent=self.Page
+
+	local holderCorner=Instance.new("UICorner")
+	holderCorner.CornerRadius=UDim.new(0,5)
+	holderCorner.Parent=holder
+
+	local stroke=Instance.new("UIStroke")
+	stroke.Color=colors.Stroke
+	stroke.Parent=holder
+
+	local label=Instance.new("TextLabel")
+	label.Position=UDim2.new(0.0234634,0,0.441951,0)
+	label.Size=UDim2.new(0.8,0,0.112167,0)
+	label.BackgroundTransparency=1
+	label.Text=name
+	label.TextColor3=colors.Text
+	label.TextSize=15
+	label.FontFace=font
+	label.TextXAlignment=Enum.TextXAlignment.Left
+	label.Parent=holder
+
+	local interact=Instance.new("TextButton")
+	interact.Name="Interact"
+	interact.Size=UDim2.new(1,0,1,0)
+	interact.BackgroundTransparency=1
+	interact.Text=""
+	interact.AutoButtonColor=false
+	interact.Parent=holder
+
+	--// Small press feedback
+	interact.MouseButton1Down:Connect(function()
+		TweenService:Create(holder,bezierFast,{BackgroundColor3=colors.Stroke}):Play()
+	end)
+	interact.MouseButton1Up:Connect(function()
+		TweenService:Create(holder,bezierFast,{BackgroundColor3=colors.Section}):Play()
+	end)
+	interact.MouseLeave:Connect(function()
+		TweenService:Create(holder,bezierFast,{BackgroundColor3=colors.Section}):Play()
+	end)
+
+	interact.MouseButton1Click:Connect(function()
+		callback()
+	end)
+
+	local button={Holder=holder,Label=label}
+
+	function button:SetName(newName)
+		label.Text=newName
+	end
+
+	return button
+end
+
+--// Slider
+function TabMT:Slider(config)
+	config=config or {}
+	local name=config.Name or "Slider"
+	local min=config.Min or 0
+	local max=config.Max or 100
+	local default=config.Default or min
+	local increment=config.Increment or 1
+	local callback=config.Callback or function() end
+
+	local holder=Instance.new("Frame")
+	holder.Name="Frame"
+	holder.Size=UDim2.new(1,0,0,46)
+	holder.BackgroundColor3=colors.Section
+	holder.BorderSizePixel=0
+	holder.Parent=self.Page
+
+	local holderCorner=Instance.new("UICorner")
+	holderCorner.CornerRadius=UDim.new(0,5)
+	holderCorner.Parent=holder
+
+	local stroke=Instance.new("UIStroke")
+	stroke.Color=colors.Stroke
+	stroke.Parent=holder
+
+	local label=Instance.new("TextLabel")
+	label.Position=UDim2.new(0.0234634,0,0.441951,0)
+	label.Size=UDim2.new(0.4,0,0.112167,0)
+	label.BackgroundTransparency=1
+	label.Text=name
+	label.TextColor3=colors.Text
+	label.TextSize=15
+	label.FontFace=font
+	label.TextXAlignment=Enum.TextXAlignment.Left
+	label.Parent=holder
+
+	local track=Instance.new("Frame")
+	track.Name="Track"
+	track.Position=UDim2.new(0.532909,0,0.434783,0)
+	track.Size=UDim2.new(0,163,0,5)
+	track.BackgroundColor3=colors.ToggleOff
+	track.BorderSizePixel=0
+	track.Parent=holder
+
+	local valueLabel=Instance.new("TextLabel")
+	valueLabel.Position=UDim2.new(0.857858,0,0.441951,0)
+	valueLabel.Size=UDim2.new(0.05,0,0.112167,0)
+	valueLabel.BackgroundTransparency=1
+	valueLabel.Text=tostring(default)
+	valueLabel.TextColor3=colors.SubText
+	valueLabel.TextSize=14
+	valueLabel.FontFace=font
+	valueLabel.TextXAlignment=Enum.TextXAlignment.Right
+	valueLabel.Parent=holder
+
+	local trackCorner=Instance.new("UICorner")
+	trackCorner.CornerRadius=UDim.new(1,0)
+	trackCorner.Parent=track
+
+	local fill=Instance.new("Frame")
+	fill.Name="Fill"
+	fill.Size=UDim2.new(0,0,1,0)
+	fill.BackgroundColor3=colors.Text
+	fill.BorderSizePixel=0
+	fill.Parent=track
+
+	local fillCorner=Instance.new("UICorner")
+	fillCorner.CornerRadius=UDim.new(1,0)
+	fillCorner.Parent=fill
+
+	local knob=Instance.new("Frame")
+	knob.Name="Knob"
+	knob.AnchorPoint=Vector2.new(0.5,0.5)
+	knob.Position=UDim2.new(0,0,0.5,0)
+	knob.Size=UDim2.new(0,12,0,12)
+	knob.BackgroundColor3=colors.Text
+	knob.BorderSizePixel=0
+	knob.ZIndex=2
+	knob.Parent=track
+
+	local knobCorner=Instance.new("UICorner")
+	knobCorner.CornerRadius=UDim.new(1,0)
+	knobCorner.Parent=knob
+
+	--// Wider invisible hitbox centered on the track, so it's easy to grab
+	local interact=Instance.new("TextButton")
+	interact.Name="Interact"
+	interact.AnchorPoint=Vector2.new(0,0.5)
+	interact.Position=UDim2.new(0,0,0.5,0)
+	interact.Size=UDim2.new(1,0,0,20)
+	interact.BackgroundTransparency=1
+	interact.Text=""
+	interact.Parent=track
+
+	local dragging=false
+	local slider={Value=default,Holder=holder}
+
+	local function apply(value,fire)
+		value=math.clamp(value,min,max)
+		if increment>0 then
+			value=min+math.floor((value-min)/increment+0.5)*increment
+			value=math.clamp(value,min,max)
+		end
+		slider.Value=value
+		local pct=(max~=min) and (value-min)/(max-min) or 0
+		fill.Size=UDim2.new(pct,0,1,0)
+		knob.Position=UDim2.new(pct,0,0.5,0)
+		valueLabel.Text=tostring(value)
+		if fire then
+			callback(value)
+		end
+	end
+
+	local function fromInput(xPos)
+		local trackPos=track.AbsolutePosition.X
+		local trackSize=track.AbsoluteSize.X
+		if trackSize<=0 then return end
+		local pct=math.clamp((xPos-trackPos)/trackSize,0,1)
+		apply(min+(max-min)*pct,true)
+	end
+
+	interact.InputBegan:Connect(function(input)
+		if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+			dragging=true
+			fromInput(input.Position.X)
+		end
+	end)
+
+	interact.InputEnded:Connect(function(input)
+		if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+			dragging=false
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
+			fromInput(input.Position.X)
+		end
+	end)
+
+	function slider:Set(value)
+		apply(value,true)
+	end
+
+	apply(default,false)
+
+	return slider
+end
+
+return lib
